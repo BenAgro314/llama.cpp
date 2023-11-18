@@ -252,7 +252,7 @@ int main(int argc, char **argv)
         show_additional_info(argc, argv);
         return 1;
     }
-    if (params.mmproj.empty() || params.image_path.empty())
+    if (params.mmproj.empty() || params.video_path.empty())
     {
         gpt_print_usage(argc, argv, params);
         show_additional_info(argc, argv);
@@ -266,9 +266,30 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    std::vector<std::string> results;
-
+    std::string video_path = params.video_path;
+    auto frame_bytes_list = read_video_frames_to_bytes(video_path);
     int count = 0;
+    for (const auto frame_bytes : frame_bytes_list)
+    {
+        long image_bytes_length = frame_bytes.size(); // Get the size of the data
+        const unsigned char *image_bytes = frame_bytes.data();
+        auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
+        std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt);
+
+        // llama_print_timings(ctx_llava->ctx_llama);
+
+        // results.push_back(result);
+
+        std::cout
+            << "Processed image [" << count << "]:\n"
+            << result
+            << std::endl;
+
+        count += 1;
+    }
+    exit(0);
+
+    std::vector<std::string> results;
 
     for (const auto image_path : params.image_path)
     {

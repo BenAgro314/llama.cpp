@@ -702,6 +702,15 @@ bool gpt_params_parse_ex(int argc, char **argv, gpt_params &params)
             }
             params.image_path.push_back(argv[i]);
         }
+        else if (arg == "--video-path")
+        {
+            if (++i >= argc)
+            {
+                invalid_param = true;
+                break;
+            }
+            params.video_path = argv[i];
+        }
         else if (arg == "-i" || arg == "--interactive")
         {
             params.interactive = true;
@@ -1442,7 +1451,8 @@ std::string llama_detokenize_bpe(llama_context *ctx, const std::vector<llama_tok
     return result;
 }
 
-bool llama_should_add_bos_token(const llama_model * model) {
+bool llama_should_add_bos_token(const llama_model *model)
+{
     const int add_bos = llama_add_bos_token(model);
 
     return add_bos != -1 ? bool(add_bos) : (llama_vocab_type(model) == LLAMA_VOCAB_TYPE_SPM);

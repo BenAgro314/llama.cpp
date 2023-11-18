@@ -139,6 +139,7 @@ struct gpt_params
     std::string mmproj = "";             // path to multimodal projector
     std::string image = "";              // path to an image file
     std::vector<std::string> image_path; // provide multiple to get a list of images
+    std::string video_path = "";         // video path
 };
 
 bool gpt_params_parse_ex(int argc, char **argv, gpt_params &params);
@@ -216,7 +217,7 @@ std::string llama_detokenize_bpe(
 
 // Uses the value from the model metadata if possible, otherwise
 // defaults to true when model type is SPM, otherwise false.
-bool llama_should_add_bos_token(const llama_model * model);
+bool llama_should_add_bos_token(const llama_model *model);
 
 //
 // YAML utils

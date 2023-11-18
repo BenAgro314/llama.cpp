@@ -636,8 +636,14 @@ libllava.a: examples/llava/llava.cpp examples/llava/llava.h examples/llava/clip.
 llava-cli: examples/llava/llava-cli.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) -Wno-cast-qual
 
+# Define any compile-time flags for OpenCV
+OPENCV_CXXFLAGS = `pkg-config --cflags opencv4`
+
+# Define any OpenCV libraries to link into executable
+OPENCV_LIBS = `pkg-config --libs opencv4`
+
 llava-test: examples/llava/llava-test.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
-	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) -Wno-cast-qual
+	$(CXX) $(CXXFLAGS) $(OPENCV_CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) $(OPENCV_LIBS) -Wno-cast-qual
 
 baby-llama: examples/baby-llama/baby-llama.cpp ggml.o llama.o $(COMMON_DEPS) train.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS)
