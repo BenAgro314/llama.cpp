@@ -1,7 +1,7 @@
 # Define the default target now so that it is always the first target
 BUILD_TARGETS = \
 	main quantize quantize-stats perplexity embedding vdot q8dot train-text-from-scratch convert-llama2c-to-ggml \
-	simple batched batched-bench save-load-state server gguf llama-bench libllava.a llava-cli baby-llama beam-search  \
+	simple batched batched-bench save-load-state server gguf llama-bench libllava.a llava-cli llava-test baby-llama beam-search  \
 	speculative infill benchmark-matmult parallel finetune export-lora tests/test-c.o
 
 # Binaries only useful for tests
@@ -626,6 +626,9 @@ libllava.a: examples/llava/llava.cpp examples/llava/llava.h examples/llava/clip.
 	$(CXX) $(CXXFLAGS) -static -fPIC -c $< -o $@ -Wno-cast-qual
 
 llava-cli: examples/llava/llava-cli.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) -Wno-cast-qual
+
+llava-test: examples/llava/llava-test.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) -Wno-cast-qual
 
 baby-llama: examples/baby-llama/baby-llama.cpp ggml.o llama.o $(COMMON_DEPS) train.o $(OBJS)
