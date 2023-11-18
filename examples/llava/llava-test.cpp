@@ -8,10 +8,47 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <opencv2/opencv.hpp>
 #include <vector>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <nlohmann/json.hpp>
+#include <fstream>
+
+void save_data_to_file(const std::string &out_path, std::string name, std::string video_path, double fps, std::vector<int> frames, std::vector<std::string> captions)
+{
+    nlohmann::json data;
+    data["name"] = name;
+    data["video_path"] = video_path;
+    data["fps"] = fps;
+    data["frames"] = frames;
+    data["captions"] = captions;
+
+    std::ofstream file(out_path + "/" + name + ".json");
+    if (file.is_open())
+    {
+        file << data.dump(4);
+        file.close();
+    }
+    else
+    {
+        std::cerr << "Could not open file for writing." << std::endl;
+    }
+}
+
+std::pair<std::string, std::string> split_ext(const std::string &filename)
+{
+    size_t last_dot = filename.find_last_of('.');
+
+    if (last_dot != std::string::npos && last_dot != 0)
+    {
+        return {filename.substr(0, last_dot), filename.substr(last_dot)};
+    }
+    else
+    {
+        return {filename, ""}; // No extension found or dot is at the beginning
+    }
+}
 
 bool file_exists(const std::string &path)
 {
@@ -330,8 +367,9 @@ int main(int argc, char **argv)
     for (auto video_path : video_paths)
     {
         auto [parent, stem] = split_path(video_path);
+        auto [file_name, ext] = split_ext(stem);
 
-        auto doc_path = params.doc_dir + "/" + stem;
+        auto doc_path = params.doc_dir + "/" + file_name + ".json";
         if (file_exists(doc_path))
         {
             std::cout << "Continuing because document " << doc_path << " exists" << std::endl;
@@ -340,14 +378,16 @@ int main(int argc, char **argv)
 
         int count = 0;
         long out_fps = 1; // process one frame every second for my sanity
+        cv::VideoCapture cap(video_path);
+        double fps = cap.get(cv::CAP_PROP_FPS);
+        cap.release();
         auto frame_bytes_list = read_video_frames_to_bytes(video_path, out_fps);
         auto num_frames = frame_bytes_list.size();
         std::cout << "Processing " << num_frames << " frames from video " << video_path << std::endl;
-        for (const auto frame_bytes : frame_bytes_list)
+        std::vector<std::string> captions;
+        std::vector<int> frame_inds;
+        for (auto [frame_bytes, frame_ind] : frame_bytes_list)
         {
-            // for now we are emptying the context between each image
-            // TODO: sliding context window
-            llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
@@ -358,8 +398,15 @@ int main(int argc, char **argv)
                 << std::endl;
 
             count += 1;
+            captions.push_back(result);
+            frame_inds.push_back(frame_ind);
+            // for now we are emptying the context between each image
+            // TODO: sliding context window
+            llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
             llava_image_embed_free(image_embed);
         }
+
+        save_data_to_file(params.doc_dir, file_name, video_path, fps, frame_inds, captions);
     }
 
     llava_free(ctx_llava);

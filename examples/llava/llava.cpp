@@ -42,7 +42,7 @@ static bool encode_image_with_clip(clip_ctx *ctx_clip, int n_threads, const clip
 
 bool llava_validate_embed_size(const llama_context *ctx_llama, const clip_ctx *ctx_clip)
 {
-    // make sure that the correct mmproj was used, i.e., compare apples to apples
+    // make sure that the correct mmproj was used, frame_ind.e., compare apples to apples
     int n_llama_embd = llama_n_embd(llama_get_model(ctx_llama));
     auto n_image_embd = clip_n_mmproj_embd(ctx_clip);
     if (n_image_embd != n_llama_embd)
@@ -80,9 +80,9 @@ bool llava_eval_image_embed(llama_context *ctx_llama, const struct llava_image_e
 {
     int n_embd = llama_n_embd(llama_get_model(ctx_llama));
 
-    for (int i = 0; i < image_embed->n_image_pos; i += n_batch)
+    for (int frame_ind = 0; frame_ind < image_embed->n_image_pos; frame_ind += n_batch)
     {
-        int n_eval = image_embed->n_image_pos - i;
+        int n_eval = image_embed->n_image_pos - frame_ind;
         if (n_eval > n_batch)
         {
             n_eval = n_batch;
@@ -90,7 +90,7 @@ bool llava_eval_image_embed(llama_context *ctx_llama, const struct llava_image_e
         llama_batch batch = {
             int32_t(n_eval),
             nullptr,
-            (image_embed->embed + i * n_embd),
+            (image_embed->embed + frame_ind * n_embd),
             nullptr,
             nullptr,
             nullptr,
@@ -197,7 +197,7 @@ LLAVA_API void llava_image_embed_free(struct llava_image_embed *embed)
     free(embed);
 }
 
-LLAVA_API std::vector<std::vector<unsigned char>> read_video_frames_to_bytes(const std::string &video_path, long out_fps)
+LLAVA_API std::vector<std::pair<std::vector<unsigned char>, int>> read_video_frames_to_bytes(const std::string &video_path, long out_fps)
 {
     cv::VideoCapture cap(video_path);
     auto video_fps = std::lround(cap.get(cv::CAP_PROP_FPS));
@@ -216,20 +216,21 @@ LLAVA_API std::vector<std::vector<unsigned char>> read_video_frames_to_bytes(con
         exit(1);
     }
 
-    std::vector<std::vector<unsigned char>> framesBytes;
+    std::vector<std::pair<std::vector<unsigned char>, int>> frame_bytes;
     cv::Mat frame;
-    long i = 0;
+    int frame_ind = 0;
     while (cap.read(frame))
     {
-        if (i % stride != 0)
+        if (frame_ind % stride != 0)
         {
-            i += 1;
+            frame_ind += 1;
             continue;
         }
         std::vector<unsigned char> buffer;
         cv::imencode(".jpg", frame, buffer); // Encoding the frame to a JPEG format
-        framesBytes.push_back(buffer);
-        i += 1;
+        frame_bytes.push_back({buffer, frame_ind});
+        frame_ind += 1;
     }
-    return framesBytes;
+    cap.release();
+    return frame_bytes;
 }
