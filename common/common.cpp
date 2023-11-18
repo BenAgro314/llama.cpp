@@ -1442,6 +1442,12 @@ std::string llama_detokenize_bpe(llama_context *ctx, const std::vector<llama_tok
     return result;
 }
 
+bool llama_should_add_bos_token(const llama_model * model) {
+    const int add_bos = llama_add_bos_token(model);
+
+    return add_bos != -1 ? bool(add_bos) : (llama_vocab_type(model) == LLAMA_VOCAB_TYPE_SPM);
+}
+
 //
 // YAML utils
 //
@@ -1582,6 +1588,7 @@ void dump_string_yaml_multiline(FILE *stream, const char *prop_name, const char 
     {
         data_str = std::regex_replace(data_str, std::regex("\n"), "\\n");
         data_str = std::regex_replace(data_str, std::regex("\""), "\\\"");
+        data_str = std::regex_replace(data_str, std::regex(R"(\\[^n"])"), R"(\$&)");
         data_str = "\"" + data_str + "\"";
         fprintf(stream, "%s: %s\n", prop_name, data_str.c_str());
         return;
