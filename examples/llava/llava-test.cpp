@@ -267,10 +267,16 @@ int main(int argc, char **argv)
     }
 
     std::string video_path = params.video_path;
-    auto frame_bytes_list = read_video_frames_to_bytes(video_path);
     int count = 0;
+    const int n_ctx = llama_n_ctx(ctx_llava->ctx_llama);
+    std::cout << "ctx size: " << n_ctx << std::endl;
+    // exit(0);
+    auto frame_bytes_list = read_video_frames_to_bytes(video_path);
     for (const auto frame_bytes : frame_bytes_list)
     {
+
+        llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
+
         long image_bytes_length = frame_bytes.size(); // Get the size of the data
         const unsigned char *image_bytes = frame_bytes.data();
         auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
