@@ -512,6 +512,9 @@ override CXXFLAGS      := $(MK_CPPFLAGS) $(CPPFLAGS) $(MK_CXXFLAGS) $(CXXFLAGS)
 override CUDA_CXXFLAGS := $(MK_CUDA_CXXFLAGS) $(CUDA_CXXFLAGS)
 override HOST_CXXFLAGS := $(MK_HOST_CXXFLAGS) $(HOST_CXXFLAGS)
 override LDFLAGS       := $(MK_LDFLAGS) $(LDFLAGS)
+# Define any compile-time flags for OpenCV
+override OPENCV_CXXFLAGS := `pkg-config --cflags opencv4`
+override OPENCV_LIBS := `pkg-config --libs opencv4`
 
 # save CXXFLAGS before we add host-only options
 NVCCFLAGS := $(NVCCFLAGS) $(CXXFLAGS) $(CUDA_CXXFLAGS) -Wno-pedantic -Xcompiler "$(HOST_CXXFLAGS)"
@@ -636,11 +639,6 @@ libllava.a: examples/llava/llava.cpp examples/llava/llava.h examples/llava/clip.
 llava-cli: examples/llava/llava-cli.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) -Wno-cast-qual
 
-# Define any compile-time flags for OpenCV
-OPENCV_CXXFLAGS = `pkg-config --cflags opencv4`
-
-# Define any OpenCV libraries to link into executable
-OPENCV_LIBS = `pkg-config --libs opencv4`
 
 llava-test: examples/llava/llava-test.cpp examples/llava/clip.h examples/llava/clip.cpp examples/llava/llava.h examples/llava/llava.cpp ggml.o llama.o $(COMMON_DEPS) $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CXXFLAGS) $(filter-out %.h,$^) -o $@ $(LDFLAGS) $(OPENCV_LIBS) -Wno-cast-qual
