@@ -693,23 +693,23 @@ bool gpt_params_parse_ex(int argc, char **argv, gpt_params &params)
             }
             params.image = argv[i];
         }
-        else if (arg == "--image-path")
+        else if (arg == "--video-dir")
         {
             if (++i >= argc)
             {
                 invalid_param = true;
                 break;
             }
-            params.image_path.push_back(argv[i]);
+            params.video_dir = argv[i];
         }
-        else if (arg == "--video-path")
+        else if (arg == "--doc-dir")
         {
             if (++i >= argc)
             {
                 invalid_param = true;
                 break;
             }
-            params.video_path = argv[i];
+            params.doc_dir = argv[i];
         }
         else if (arg == "-i" || arg == "--interactive")
         {

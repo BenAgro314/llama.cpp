@@ -136,10 +136,10 @@ struct gpt_params
     bool infill = false;           // use infill mode
 
     // multimodal models (see examples/llava)
-    std::string mmproj = "";             // path to multimodal projector
-    std::string image = "";              // path to an image file
-    std::vector<std::string> image_path; // provide multiple to get a list of images
-    std::string video_path = "";         // video path
+    std::string mmproj = ""; // path to multimodal projector
+    std::string image = "";  // path to an image file
+    std::string video_dir = "";
+    std::string doc_dir = "";
 };
 
 bool gpt_params_parse_ex(int argc, char **argv, gpt_params &params);

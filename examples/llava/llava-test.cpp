@@ -9,7 +9,63 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <nlohmann/json.hpp>
 
+bool file_exists(const std::string &path)
+{
+    struct stat buffer;
+    return (stat(path.c_str(), &buffer) == 0);
+}
+
+std::pair<std::string, std::string> split_path(const std::string &path)
+{
+    size_t found = path.find_last_of("/\\");
+    if (found != std::string::npos)
+    {
+        return {path.substr(0, found), path.substr(found + 1)};
+    }
+    return {"", path}; // In case there is no '/' or '\' in the path
+}
+
+std::vector<std::string> list_files_in_directory(const std::string &directory_path)
+{
+    std::vector<std::string> file_paths;
+    DIR *dir;
+    struct dirent *ent;
+    struct stat st;
+
+    dir = opendir(directory_path.c_str());
+    if (dir != NULL)
+    {
+        while ((ent = readdir(dir)) != NULL)
+        {
+            const std::string file_name = ent->d_name;
+            const std::string full_file_name = directory_path + "/" + file_name;
+
+            if (file_name[0] == '.')
+                continue; // Skip hidden files
+
+            if (stat(full_file_name.c_str(), &st) == -1)
+                continue; // Handle error
+
+            const bool is_directory = (st.st_mode & S_IFDIR) != 0;
+
+            if (is_directory)
+                continue; // Skip directories
+
+            file_paths.push_back(full_file_name);
+        }
+        closedir(dir);
+    }
+    else
+    {
+        perror("opendir");
+    }
+
+    return file_paths;
+}
 static bool eval_tokens(struct llama_context *ctx_llama, std::vector<llama_token> tokens, int n_batch, int *n_past)
 {
     int N = (int)tokens.size();
@@ -252,7 +308,7 @@ int main(int argc, char **argv)
         show_additional_info(argc, argv);
         return 1;
     }
-    if (params.mmproj.empty() || params.video_path.empty())
+    if (params.mmproj.empty() || params.video_dir.empty())
     {
         gpt_print_usage(argc, argv, params);
         show_additional_info(argc, argv);
@@ -266,57 +322,44 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    std::string video_path = params.video_path;
-    int count = 0;
     const int n_ctx = llama_n_ctx(ctx_llava->ctx_llama);
-    std::cout << "ctx size: " << n_ctx << std::endl;
-    // exit(0);
-    auto frame_bytes_list = read_video_frames_to_bytes(video_path);
-    for (const auto frame_bytes : frame_bytes_list)
+
+    std::vector<std::string> video_paths = list_files_in_directory(params.video_dir);
+
+    // iterate over videos to process
+    for (auto video_path : video_paths)
     {
+        auto [parent, stem] = split_path(video_path);
 
-        llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
+        auto doc_path = params.doc_dir + "/" + stem;
+        if (file_exists(doc_path))
+        {
+            std::cout << "Continuing because document " << doc_path << " exists" << std::endl;
+            continue;
+        }
 
-        long image_bytes_length = frame_bytes.size(); // Get the size of the data
-        const unsigned char *image_bytes = frame_bytes.data();
-        auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
-        std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt);
+        int count = 0;
+        long out_fps = 1; // process one frame every second for my sanity
+        auto frame_bytes_list = read_video_frames_to_bytes(video_path, out_fps);
+        auto num_frames = frame_bytes_list.size();
+        std::cout << "Processing " << num_frames << " frames from video " << video_path << std::endl;
+        for (const auto frame_bytes : frame_bytes_list)
+        {
+            // for now we are emptying the context between each image
+            // TODO: sliding context window
+            llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
+            long image_bytes_length = frame_bytes.size(); // Get the size of the data
+            const unsigned char *image_bytes = frame_bytes.data();
+            auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt);
+            std::cout
+                << "Processed image [" << count << "/" << num_frames << "]:\n"
+                << result
+                << std::endl;
 
-        // llama_print_timings(ctx_llava->ctx_llama);
-
-        // results.push_back(result);
-
-        std::cout
-            << "Processed image [" << count << "]:\n"
-            << result
-            << std::endl;
-
-        count += 1;
-    }
-    exit(0);
-
-    std::vector<std::string> results;
-
-    for (const auto image_path : params.image_path)
-    {
-
-        auto image_embed = load_image_embed(ctx_llava, &params, image_path);
-
-        // process the prompt
-        std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt);
-
-        // llama_print_timings(ctx_llava->ctx_llama);
-
-        results.push_back(result);
-
-        std::cout
-            << "Processed image [" << count << "]:\n"
-            << result
-            << std::endl;
-
-        llava_image_embed_free(image_embed);
-
-        count += 1;
+            count += 1;
+            llava_image_embed_free(image_embed);
+        }
     }
 
     llava_free(ctx_llava);

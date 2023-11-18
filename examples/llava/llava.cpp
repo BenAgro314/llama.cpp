@@ -197,22 +197,39 @@ LLAVA_API void llava_image_embed_free(struct llava_image_embed *embed)
     free(embed);
 }
 
-LLAVA_API std::vector<std::vector<unsigned char>> read_video_frames_to_bytes(const std::string &video_path)
+LLAVA_API std::vector<std::vector<unsigned char>> read_video_frames_to_bytes(const std::string &video_path, long out_fps)
 {
     cv::VideoCapture cap(video_path);
+    auto video_fps = std::lround(cap.get(cv::CAP_PROP_FPS));
+
+    if (out_fps > video_fps)
+    {
+        std::cerr << "Error: out fps is greater than video fps" << std::endl;
+        exit(1);
+    }
+
+    auto stride = std::lround(video_fps / out_fps);
+
     if (!cap.isOpened())
     {
         std::cerr << "Error opening video file." << std::endl;
-        return {};
+        exit(1);
     }
 
     std::vector<std::vector<unsigned char>> framesBytes;
     cv::Mat frame;
+    long i = 0;
     while (cap.read(frame))
     {
+        if (i % stride != 0)
+        {
+            i += 1;
+            continue;
+        }
         std::vector<unsigned char> buffer;
         cv::imencode(".jpg", frame, buffer); // Encoding the frame to a JPEG format
         framesBytes.push_back(buffer);
+        i += 1;
     }
     return framesBytes;
 }
