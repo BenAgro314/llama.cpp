@@ -291,8 +291,8 @@ static std::string process_prompt(
     struct llava_image_embed *image_embed,
     gpt_params *params,
     const std::string &prompt,
-    std::map<std::string, std::string> video_metadata),
-    int frame_index,
+    std::map<std::string, std::string> video_metadata)
+// int frame_index,
 {
     int n_past = 0;
 
@@ -453,7 +453,7 @@ int main(int argc, char **argv)
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
-            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata, count);
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata);
             std::cout
                 << "Processed image [" << count << "/" << num_frames << "]:\n"
                 << result
