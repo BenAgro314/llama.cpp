@@ -291,26 +291,38 @@ static std::string process_prompt(
     struct llava_image_embed *image_embed,
     gpt_params *params,
     const std::string &prompt,
-    std::map<std::string, std::string> video_metadata)
+    std::map<std::string, std::string> video_metadata),
+    int frame_index,
 {
     int n_past = 0;
 
     const int max_tgt_len = params->n_predict < 0 ? 256 : params->n_predict;
 
     // llava chat format is "<system_prompt>\nUSER:<image_embeddings>\n<textual_prompt>\nASSISTANT:"
-    std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
-    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:").c_str(), params->n_batch, &n_past, true);
+    // std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
+    // prompt = "The image comes from a video. Caption this image in detail.";
+    std::string user_name = "\nIMAGE";
+    // if (frame_index == 0)
+    // {
+    std::string sys_prompt = "Ouput of an artificial intellegence system used to turn videos into textual descriptions by captioning images. Each image is provided after IMAGE, with optional METADATA. After CAPTION: should be a detailed caption of the image in the context of the video.";
+    eval_string(ctx_llava->ctx_llama, (sys_prompt + user_name).c_str(), params->n_batch, &n_past, true);
+    // }
+    // else
+    // {
+    // shift context window
+    // eval_string(ctx_llava->ctx_llama, user_name.c_str(), params->n_batch, &n_past, true);
+    // }
     llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
-    std::string prompt_with_metadata = prompt;
+    std::string prompt_with_metadata = ""; // prompt;
     if (video_metadata.size() > 0)
     {
-        prompt_with_metadata += "The video has the following metadata:\n";
+        prompt_with_metadata += "METADATA:\n";
         for (const auto &[key, value] : video_metadata)
         {
             prompt_with_metadata += key + ": " + value + "\n";
         }
     }
-    eval_string(ctx_llava->ctx_llama, (prompt_with_metadata + "ASSISTANT:").c_str(), params->n_batch, &n_past, false);
+    eval_string(ctx_llava->ctx_llama, (prompt_with_metadata + "CAPTION:").c_str(), params->n_batch, &n_past, false);
     std::string result;
     for (int i = 0; i < max_tgt_len; i++)
     {
@@ -441,7 +453,7 @@ int main(int argc, char **argv)
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
-            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata);
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata, count);
             std::cout
                 << "Processed image [" << count << "/" << num_frames << "]:\n"
                 << result
