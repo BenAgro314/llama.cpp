@@ -36,6 +36,34 @@ void save_data_to_file(const std::string &out_path, std::string name, std::strin
     }
 }
 
+std::map<std::string, std::string> read_video_meatdata(const std::string &file_name)
+{
+    std::ifstream file(file_name);
+    nlohmann::json j;
+    file >> j;
+
+    std::map<std::string, std::string> data_map;
+
+    for (auto &element : j.items())
+    {
+        std::string key = element.key();
+        std::string value;
+
+        if (element.value().is_string())
+        {
+            value = element.value();
+        }
+        else
+        {
+            value = element.value().dump(); // Convert non-string value to a JSON string
+        }
+
+        data_map[key] = value;
+    }
+
+    return data_map;
+}
+
 std::pair<std::string, std::string> split_ext(const std::string &filename)
 {
     size_t last_dot = filename.find_last_of('.');
@@ -258,16 +286,31 @@ static struct llava_image_embed *load_image_embed(llava_context *ctx_llava, gpt_
     return embed;
 }
 
-static std::string process_prompt(struct llava_context *ctx_llava, struct llava_image_embed *image_embed, gpt_params *params, const std::string &prompt)
+static std::string process_prompt(
+    struct llava_context *ctx_llava,
+    struct llava_image_embed *image_embed,
+    gpt_params *params,
+    const std::string &prompt,
+    std::map<std::string, std::string> video_metadata)
 {
     int n_past = 0;
 
     const int max_tgt_len = params->n_predict < 0 ? 256 : params->n_predict;
 
     // llava chat format is "<system_prompt>\nUSER:<image_embeddings>\n<textual_prompt>\nASSISTANT:"
-    eval_string(ctx_llava->ctx_llama, "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.\nUSER:", params->n_batch, &n_past, true);
+    std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
+    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:").c_str(), params->n_batch, &n_past, true);
     llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
-    eval_string(ctx_llava->ctx_llama, (prompt + "\nASSISTANT:").c_str(), params->n_batch, &n_past, false);
+    std::string prompt_with_metadata = prompt;
+    if (video_metadata.size() > 0)
+    {
+        prompt_with_metadata += "The video has the following metadata:\n";
+        for (const auto &[key, value] : video_metadata)
+        {
+            prompt_with_metadata += key + ": " + value + "\n";
+        }
+    }
+    eval_string(ctx_llava->ctx_llama, (prompt_with_metadata + "ASSISTANT:").c_str(), params->n_batch, &n_past, false);
     std::string result;
     for (int i = 0; i < max_tgt_len; i++)
     {
@@ -286,7 +329,7 @@ static struct llava_context *llava_init(gpt_params *params)
     auto prompt = params->prompt;
     if (prompt.empty())
     {
-        prompt = "describe the image in detail.";
+        prompt = "The image comes from a video. Caption this image in detail.";
     }
 
     auto ctx_clip = clip_model_load(clip_path, /*verbosity=*/1);
@@ -370,10 +413,17 @@ int main(int argc, char **argv)
         auto [file_name, ext] = split_ext(stem);
 
         auto doc_path = params.doc_dir + "/" + file_name + ".json";
+        auto metadata_path = params.video_metadata_dir + "/" + file_name + ".json";
         if (file_exists(doc_path))
         {
             std::cout << "Continuing because document " << doc_path << " exists" << std::endl;
             continue;
+        }
+
+        std::map<std::string, std::string> video_metadata;
+        if (file_exists(metadata_path))
+        {
+            video_metadata = read_video_meatdata(metadata_path);
         }
 
         int count = 0;
@@ -391,7 +441,7 @@ int main(int argc, char **argv)
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
-            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt);
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata);
             std::cout
                 << "Processed image [" << count << "/" << num_frames << "]:\n"
                 << result

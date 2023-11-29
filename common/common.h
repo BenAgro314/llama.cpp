@@ -139,6 +139,7 @@ struct gpt_params
     std::string mmproj = ""; // path to multimodal projector
     std::string image = "";  // path to an image file
     std::string video_dir = "";
+    std::string video_metadata_dir = "";
     std::string doc_dir = "";
 };
 
