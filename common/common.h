@@ -140,6 +140,7 @@ struct gpt_params
     std::string image = "";  // path to an image file
     std::string video_dir = "";
     std::string video_metadata_dir = "";
+    std::string audio_captions_dir = "";
     std::string doc_dir = "";
 };
 

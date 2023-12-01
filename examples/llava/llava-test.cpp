@@ -64,6 +64,32 @@ std::map<std::string, std::string> read_video_meatdata(const std::string &file_n
     return data_map;
 }
 
+std::pair<std::vector<std::pair<int, int>>, std::vector<std::string>> read_audio_captions(const std::string &filename)
+{
+    // Read the JSON file
+    std::ifstream ifs(filename);
+    nlohmann::json j;
+    ifs >> j;
+
+    // Vectors to store the timestamps and transcriptions
+    std::vector<std::pair<int, int>> timestamps_ms;
+    std::vector<std::string> transcriptions;
+
+    // Iterate over the transcription array
+    for (const auto &item : j["transcription"])
+    {
+        int start = item["offsets"]["from"];
+        int end = item["offsets"]["to"];
+        std::string text = item["text"];
+
+        // Add the data to the vectors
+        timestamps_ms.push_back(std::make_pair(start, end));
+        transcriptions.push_back(text);
+    }
+
+    return std::make_pair(timestamps_ms, transcriptions);
+}
+
 std::pair<std::string, std::string> split_ext(const std::string &filename)
 {
     size_t last_dot = filename.find_last_of('.');
@@ -291,7 +317,8 @@ static std::string process_prompt(
     struct llava_image_embed *image_embed,
     gpt_params *params,
     const std::string &prompt,
-    std::map<std::string, std::string> video_metadata)
+    std::map<std::string, std::string> video_metadata,
+    std::string audio_caption)
 {
     int n_past = 0;
 
@@ -309,6 +336,11 @@ static std::string process_prompt(
         {
             prompt_with_metadata += key + ": " + value + "\n";
         }
+    }
+    if (audio_caption.size() > 0)
+    {
+        prompt_with_metadata += "The following closed captions are during frame:\n";
+        prompt_with_metadata += audio_caption + "\n";
     }
     eval_string(ctx_llava->ctx_llama, (prompt_with_metadata + "ASSISTANT:").c_str(), params->n_batch, &n_past, false);
     std::string result;
@@ -414,6 +446,7 @@ int main(int argc, char **argv)
 
         auto doc_path = params.doc_dir + "/" + file_name + ".json";
         auto metadata_path = params.video_metadata_dir + "/" + file_name + ".json";
+        auto audio_captions_path = params.audio_captions_dir + "/" + file_name + ".json";
         if (file_exists(doc_path))
         {
             std::cout << "Continuing because document " << doc_path << " exists" << std::endl;
@@ -425,6 +458,13 @@ int main(int argc, char **argv)
         {
             video_metadata = read_video_meatdata(metadata_path);
         }
+
+        std::pair<std::vector<std::pair<int, int>>, std::vector<std::string>> audio_captions;
+        if (file_exists(audio_captions_path))
+        {
+            audio_captions = read_audio_captions(audio_captions_path);
+        }
+        bool audio_captions_exist = !audio_captions.first.empty() || !audio_captions.second.empty();
 
         int count = 0;
         long out_fps = 1; // process one frame every second for my sanity
@@ -441,7 +481,24 @@ int main(int argc, char **argv)
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
-            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata);
+            std::string audio_caption = "";
+            if (audio_captions_exist)
+            {
+                // find corresponding caption during this frame, if it exists
+                float t_ms = ((1 / fps) * frame_ind) * 1000.0;
+                int caption_count = 0;
+                for (std::pair<int, int> timestamp_ms : audio_captions.first)
+                {
+                    if (t_ms >= (float)timestamp_ms.first && (t_ms <= (float)timestamp_ms.second))
+                    {
+                        audio_caption = audio_captions.second[caption_count];
+                        break;
+                    }
+                    caption_count += 1;
+                }
+            }
+            std::cout << "Audio caption: " << audio_caption << "\n";
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata, audio_caption);
             std::cout
                 << "Processed image [" << count << "/" << num_frames << "]:\n"
                 << result

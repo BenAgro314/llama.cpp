@@ -711,6 +711,15 @@ bool gpt_params_parse_ex(int argc, char **argv, gpt_params &params)
             }
             params.video_metadata_dir = argv[i];
         }
+        else if (arg == "--audio-captions-dir")
+        {
+            if (++i >= argc)
+            {
+                invalid_param = true;
+                break;
+            }
+            params.audio_captions_dir = argv[i];
+        }
         else if (arg == "--doc-dir")
         {
             if (++i >= argc)
