@@ -326,23 +326,32 @@ static std::string process_prompt(
 
     // llava chat format is "<system_prompt>\nUSER:<image_embeddings>\n<textual_prompt>\nASSISTANT:"
     std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
-    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:").c_str(), params->n_batch, &n_past, true);
-    llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
-    std::string prompt_with_metadata = prompt;
+    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:I am watching a video.").c_str(), params->n_batch, &n_past, true);
     if (video_metadata.size() > 0)
     {
-        prompt_with_metadata += "The video has the following metadata:\n";
+        std::string metadata_prompt = "The video has the following metadata:\n";
+        // prompt_with_metadata += "The video has the following metadata:\n";
         for (const auto &[key, value] : video_metadata)
         {
-            prompt_with_metadata += key + ": " + value + "\n";
+            metadata_prompt += key + ": " + value + "\n";
         }
+        eval_string(ctx_llava->ctx_llama, (metadata_prompt).c_str(), params->n_batch, &n_past, true);
     }
+    eval_string(ctx_llava->ctx_llama, "The video is at the following image:", params->n_batch, &n_past, true);
+    llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
     if (audio_caption.size() > 0)
     {
-        prompt_with_metadata += "The following closed captions are during frame:\n";
-        prompt_with_metadata += audio_caption + "\n";
+        std::string audio_prompt = "With the following closed captions: " + audio_caption + "\n";
+        eval_string(ctx_llava->ctx_llama, (audio_caption).c_str(), params->n_batch, &n_past, true);
     }
-    eval_string(ctx_llava->ctx_llama, (prompt_with_metadata + "ASSISTANT:").c_str(), params->n_batch, &n_past, false);
+    if ((audio_caption.size() > 0) || (video_metadata.size() > 0))
+    {
+        eval_string(ctx_llava->ctx_llama, "Using this context, caption the image in detail\nASSISTANT:", params->n_batch, &n_past, false);
+    }
+    else
+    {
+        eval_string(ctx_llava->ctx_llama, "Caption the image in detail\nASSISTANT:", params->n_batch, &n_past, false);
+    }
     std::string result;
     for (int i = 0; i < max_tgt_len; i++)
     {
