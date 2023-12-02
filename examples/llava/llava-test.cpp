@@ -318,15 +318,14 @@ static std::string process_prompt(
     gpt_params *params,
     const std::string &prompt,
     std::map<std::string, std::string> video_metadata,
-    std::string audio_caption)
+    std::string audio_caption,
+    int *n_past)
 {
-    int n_past = 0;
-
     const int max_tgt_len = params->n_predict < 0 ? 256 : params->n_predict;
 
     // llava chat format is "<system_prompt>\nUSER:<image_embeddings>\n<textual_prompt>\nASSISTANT:"
     std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
-    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:I am watching a video.").c_str(), params->n_batch, &n_past, true);
+    eval_string(ctx_llava->ctx_llama, (sys_prompt + "\nUSER:I am watching a video.").c_str(), params->n_batch, n_past, true);
     if (video_metadata.size() > 0)
     {
         std::string metadata_prompt = "The video has the following metadata:\n";
@@ -335,27 +334,27 @@ static std::string process_prompt(
         {
             metadata_prompt += key + ": " + value + "\n";
         }
-        eval_string(ctx_llava->ctx_llama, (metadata_prompt).c_str(), params->n_batch, &n_past, true);
+        eval_string(ctx_llava->ctx_llama, (metadata_prompt).c_str(), params->n_batch, n_past, true);
     }
-    eval_string(ctx_llava->ctx_llama, "The video is at the following image:", params->n_batch, &n_past, true);
-    llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
+    eval_string(ctx_llava->ctx_llama, "The video is at the following image:", params->n_batch, n_past, true);
+    llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, n_past);
     if (audio_caption.size() > 0)
     {
         std::string audio_prompt = "With the following closed captions: " + audio_caption + "\n";
-        eval_string(ctx_llava->ctx_llama, (audio_caption).c_str(), params->n_batch, &n_past, true);
+        eval_string(ctx_llava->ctx_llama, (audio_caption).c_str(), params->n_batch, n_past, true);
     }
     if ((audio_caption.size() > 0) || (video_metadata.size() > 0))
     {
-        eval_string(ctx_llava->ctx_llama, "Using this context, caption the image in detail\nASSISTANT:", params->n_batch, &n_past, false);
+        eval_string(ctx_llava->ctx_llama, "Using this context, caption the image in detail\nASSISTANT:", params->n_batch, n_past, false);
     }
     else
     {
-        eval_string(ctx_llava->ctx_llama, "Caption the image in detail\nASSISTANT:", params->n_batch, &n_past, false);
+        eval_string(ctx_llava->ctx_llama, "Caption the image in detail\nASSISTANT:", params->n_batch, n_past, false);
     }
     std::string result;
     for (int i = 0; i < max_tgt_len; i++)
     {
-        const char *tmp = sample(ctx_llava->ctx_llama, *params, &n_past);
+        const char *tmp = sample(ctx_llava->ctx_llama, *params, n_past);
         if (strcmp(tmp, "</s>") == 0)
             break;
         result += tmp;
@@ -450,6 +449,7 @@ int main(int argc, char **argv)
     // iterate over videos to process
     for (auto video_path : video_paths)
     {
+
         auto [parent, stem] = split_path(video_path);
         auto [file_name, ext] = split_ext(stem);
 
@@ -475,6 +475,12 @@ int main(int argc, char **argv)
         }
         bool audio_captions_exist = !audio_captions.first.empty() || !audio_captions.second.empty();
 
+        // clear cache for new video
+        llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
+        std::string sys_prompt = "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.";
+        int end_sys_index = 0;
+        eval_string(ctx_llava->ctx_llama, (sys_prompt).c_str(), params.n_batch, &end_sys_index, true);
+
         int count = 0;
         long out_fps = 1; // process one frame every second for my sanity
         cv::VideoCapture cap(video_path);
@@ -485,8 +491,14 @@ int main(int argc, char **argv)
         std::cout << "Processing " << num_frames << " frames from video " << video_path << std::endl;
         std::vector<std::string> captions;
         std::vector<int> frame_inds;
+
+        int num_tokens_in_past_frame = 0;
+        int num_tokens_in_frame;
+
         for (auto [frame_bytes, frame_ind] : frame_bytes_list)
         {
+            num_tokens_in_frame = 0;
+
             long image_bytes_length = frame_bytes.size(); // Get the size of the data
             const unsigned char *image_bytes = frame_bytes.data();
             auto image_embed = llava_image_embed_make_with_bytes(ctx_llava->ctx_clip, params.n_threads, image_bytes, image_bytes_length);
@@ -507,7 +519,7 @@ int main(int argc, char **argv)
                 }
             }
             std::cout << "Audio caption: " << audio_caption << "\n";
-            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata, audio_caption);
+            std::string result = process_prompt(ctx_llava, image_embed, &params, params.prompt, video_metadata, audio_caption, &num_tokens_in_frame);
             std::cout
                 << "Processed image [" << count << "/" << num_frames << "]:\n"
                 << result
@@ -518,8 +530,15 @@ int main(int argc, char **argv)
             frame_inds.push_back(frame_ind);
             // for now we are emptying the context between each image
             // TODO: sliding context window
-            llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, 0, n_ctx);
             llava_image_embed_free(image_embed);
+
+            if (num_tokens_in_past_frame != 0)
+            { // clear past frame tokens, make curent frame the new past frame
+                llama_kv_cache_seq_rm(ctx_llava->ctx_llama, 0, end_sys_index, end_sys_index + num_tokens_in_past_frame);
+                llama_kv_cache_seq_shift(ctx_llava->ctx_llama, 0, end_sys_index + num_tokens_in_past_frame, end_sys_index + num_tokens_in_past_frame + num_tokens_in_frame, -num_tokens_in_past_frame);
+            }
+
+            num_tokens_in_past_frame = num_tokens_in_frame;
         }
 
         save_data_to_file(params.doc_dir, file_name, video_path, fps, frame_inds, captions);
